@@ -1,0 +1,71 @@
+#!/usr/bin/gawk -f
+
+function perr(s) {
+    printf "%s: %s\n", PROCINFO["argv"][2], s > "/dev/stderr"
+}
+
+function addfile(f, ign_noent, err_exit,   line, i) {
+    for (i = 1; i <= files_len; i++) {
+        if (files[i] == f)
+            return
+    }
+
+    i = getline line < f
+
+    if (i < 0) {
+        if (!ign_noent)
+            perr(sprintf("%s: %s", f, ERRNO))
+        if (err_exit)
+            exit 1
+        else
+            return
+    }
+
+    files[++files_len] = f
+    close(f)
+}
+
+function procfile(f,   s, i, linem, arr) {
+    while ((i = (getline line < f)) > 0) {
+        if (match(line, /^\. *([A-Za-z]+) +(.+)/, arr) == 0)
+            continue
+
+        if (arr[1] in so_macros) {
+            addfile(arr[2], so_macros[arr[1]]["ign_noent"])
+            pre[arr[2]] = ""
+        }
+    }
+
+    if (i < 0) {
+        perr(sprintf("Failed to process %s: %s\n", f, ERRNO))
+        exit 1
+    }
+
+    close(f)
+}
+
+BEGIN {
+    so_macros["so"]["ign_noent"] = 0
+    so_macros["soquiet"]["ign_noent"] = 1
+
+    if (ARGC != 3) {
+        perr("Usage: troffm <doc> <source>")
+        exit 1
+    }
+
+    out = ARGV[1]
+
+    for (i = 2; i < ARGC; i++)
+        addfile(ARGV[i], 0, 1)
+
+    for (i = 1; i <= files_len; i++)
+        procfile(files[i])
+
+    s = ""
+    for (p in pre) {
+        s = s " " p
+    }
+
+    if (s != "")
+        printf "%s:%s", out, s
+}
